@@ -53,6 +53,8 @@ import urllib.error
 import urllib.parse
 import configparser
 
+from keepalive import (HTTPHandler, HTTPSHandler)
+
 locale.setlocale(locale.LC_ALL, '')
 ENCODING = locale.getpreferredencoding() or 'UTF-8'
 
@@ -194,6 +196,7 @@ class Normalizer(object):
 session_id = 0
 vmode_id = -1
 
+urllib.request.install_opener(urllib.request.build_opener(HTTPHandler()))
 
 class TransmissionRequest(object):
     """Handle communication with Transmission server."""
@@ -215,6 +218,7 @@ class TransmissionRequest(object):
 
         global session_id
         try:
+            self.http_request.add_header('Connection', 'keep-alive')
             if session_id:
                 self.http_request.add_header('X-Transmission-Session-Id', session_id)
             self.open_request = urllib.request.urlopen(self.http_request)
