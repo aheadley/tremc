@@ -195,16 +195,21 @@ session_id = ''
 vmode_id = -1
 
 import urllib3
-pool = urllib3.PoolManager()
+# pool = urllib3.PoolManager()
+pool = None
 
 class TransmissionRequest(object):
     """Handle communication with Transmission server."""
     def __init__(self, host, port, path, method=None, tag=None, arguments=None):
-        self.url           = create_url(host, port, path)
+        global pool
+        # self.url           = create_url(host, port, path)
+        self.url           = ('/' + path).replace('//', '/')
+        if pool is None:
+            pool = urllib3.HTTPConnectionPool('{}:{}'.format(host, port), maxsize=10, block=True)
         self.open_request  = None
         self.last_update   = 0
         if method and tag:
-            self.http_request  = {'headers': {}}
+            self.http_request  = {'headers': {'Connection': 'keep-alive'}}
             self.set_request_data(method, tag, arguments)
 
     def set_request_data(self, method, tag, arguments=None):
@@ -253,6 +258,7 @@ class TransmissionRequest(object):
             m = re.search('X-Transmission-Session-Id:\s*(\w+)', msg)
             try:
                 session_id = m.group(1)
+                self.open_request.release_conn()
                 self.send_request()
             except AttributeError:
                 print(session_id)
