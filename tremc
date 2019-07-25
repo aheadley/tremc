@@ -191,9 +191,11 @@ class Normalizer(object):
         return sum(self.values[id]) / len(self.values[id])
 
 
-session_id = 0
+session_id = ''
 vmode_id = -1
 
+import urllib3
+pool = urllib3.PoolManager()
 
 class TransmissionRequest(object):
     """Handle communication with Transmission server."""
@@ -202,13 +204,19 @@ class TransmissionRequest(object):
         self.open_request  = None
         self.last_update   = 0
         if method and tag:
+            self.http_request  = {'headers': {}}
             self.set_request_data(method, tag, arguments)
 
     def set_request_data(self, method, tag, arguments=None):
         request_data = {'method': method, 'tag': tag}
         if arguments:
             request_data['arguments'] = arguments
-        self.http_request = urllib.request.Request(self.url, bytes(json.dumps(request_data), ENCODING))
+        self.http_request.update({
+            'url': self.url,
+            'body': json.dumps(request_data).encode('utf-8'),
+            # 'encoding': ENCODING,
+        })
+        # self.http_request = urllib.request.Request(self.url, bytes(json.dumps(request_data), ENCODING))
 
     def send_request(self):
         """Ask for information from server OR submit command."""
@@ -216,16 +224,28 @@ class TransmissionRequest(object):
         global session_id
         try:
             if session_id:
-                self.http_request.add_header('X-Transmission-Session-Id', session_id)
-            self.open_request = urllib.request.urlopen(self.http_request)
+                self.http_request['headers']['X-Transmission-Session-Id'] = session_id
+                # self.http_request.add_header('X-Transmission-Session-Id', session_id)
+            # self.open_request = urllib.request.urlopen(self.http_request)
+            self.open_request = pool.request(
+                'POST',
+                self.http_request['url'],
+                headers=self.http_request['headers'],
+                body=self.http_request['body'],
+                preload_content=False)
+            if self.open_request.status != 200:
+                raise IndexError()
         except AttributeError:
             # request data (http_request) isn't specified yet -- data will be available on next call
             pass
 
         # authentication
-        except urllib.error.HTTPError as e:
+        # except urllib.error.HTTPError as e:
+        except IndexError:
+            e = self.open_request
             try:
-                msg = html2text(str(e.read()))
+                msg = html2text(e.read().decode('utf-8'))
+                # msg = html2text(str(e.read()))
             except:
                 msg = str(e)
 
@@ -235,6 +255,7 @@ class TransmissionRequest(object):
                 session_id = m.group(1)
                 self.send_request()
             except AttributeError:
+                print(session_id)
                 quit(str(msg) + "\n", CONNECTION_ERROR)
 
         except urllib.error.URLError as msg:
@@ -251,6 +272,7 @@ class TransmissionRequest(object):
             if not chunk:
                 break
             response += chunk
+        self.open_request.release_conn()
 
         try:
             data = json.loads(response.decode("utf-8"))
